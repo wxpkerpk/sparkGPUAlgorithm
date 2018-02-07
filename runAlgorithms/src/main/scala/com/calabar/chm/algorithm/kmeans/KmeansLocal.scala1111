@@ -1,0 +1,132 @@
+package com.calabar.chm.algorithm.kmeans
+
+
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{Hdfs, Path}
+import org.apache.hadoop.io.IOUtils
+
+import scala.io.Source
+import scala.util.Random
+
+class Vector(val array: Array[Float]) {
+  @inline final def  dis(v: Vector) = {
+
+    math.sqrt(array.indices.map(x => {
+
+      val value = v.array(x) - array(x)
+    value * value
+    }).sum).toFloat
+
+  }
+
+
+  @inline final def +(v: Vector) = {
+    new Vector(v.array.indices.map(x => v.array(x) + array(x)).toArray)
+
+  }
+
+  @inline final  def /(v: Float) = {
+    new Vector(array.map(_ / v))
+  }
+
+}
+
+
+object Kmeans {
+
+
+  def readHdfs(path: String): String = {
+
+
+    import org.apache.hadoop.fs.FileSystem
+    val conf = new Configuration()
+    val fs = FileSystem.get(conf)
+    val hdfsPath = new Path(path)
+    if (fs.exists(hdfsPath)) {
+      val is = fs.open(hdfsPath)
+      val status = fs.getFileStatus(hdfsPath)
+      val buffer = new Array[Byte](String.valueOf(status.getLen).toInt)
+      is.readFully(0, buffer)
+      is.close()
+      fs.close()
+      buffer.toString
+    } else null
+
+  }
+
+  def main(args: Array[String]): Unit = {
+    val path = "/Users/wx/Downloads/t_d_300M.txt"
+    val content = Source.fromFile(path).mkString
+    val data = content.split("\n").map(x => new Vector(x.split(" ").map(_.toFloat)))
+
+    val clusters = new Kmeans(10, 20, data, 0).train()
+
+
+  }
+
+}
+
+/**
+  * Created by wx on 2017/5/23.
+  */
+class Kmeans(iteration: Int, k: Int, data: Array[Vector], elison: Float) {
+
+
+  def takeSimple(data: Array[Vector], k: Int): Array[Vector] = {
+    val result = Array.ofDim[Vector](k)
+    val len = data.length
+    val uu = new Random()
+    for (i <- 0 until k) {
+      val c = uu.nextInt(len - i)
+      result(i) = data(c)
+      data(c) = data(len - i - 1)
+    }
+    result
+  }
+
+
+  def train() = {
+
+    var i = 0
+    var continue = true
+
+
+    var cluster = takeSimple(data, k)
+
+    val dim = data.head.array.length
+    while (i < iteration && continue) {
+      val sumVector = new Array[(Vector, Int)](k).map(_ => (new Vector(new Array[Float](dim)), 0))
+      continue = false
+      val start = System.currentTimeMillis()
+      data.foreach { x =>
+        var (minDis, index) = (Float.MaxValue, 0)
+        cluster.indices.foreach(y => {
+          val dis = x.dis(cluster(y))
+          if (dis < minDis) {
+            minDis = dis
+            index = y
+          }
+        })
+        sumVector(index) = (x + sumVector(index)._1, sumVector(index)._2 + 1)
+      }
+      val newSumVector = sumVector.map { case (v, i) =>
+        v / i
+      }
+
+      cluster.indices.foreach(x => {
+        val dis = cluster(x).dis(newSumVector(x))
+        if (dis * dis > elison) continue = true
+      })
+      i += 1
+      cluster = newSumVector
+      val end = System.currentTimeMillis()
+      println(end - start)
+
+    }
+
+    cluster
+
+
+  }
+
+}
